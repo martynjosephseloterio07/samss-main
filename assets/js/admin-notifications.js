@@ -1,13 +1,27 @@
 (function () {
   'use strict';
 
-  var bell = document.querySelector('.topbar__notif') || document.querySelector('.topbar__notif-btn');
+  var bell = document.querySelector('.topbar__notif, .topbar__notif-btn');
+  var topbarRight = document.querySelector('.topbar__right');
+
+  if (!bell && topbarRight) {
+    bell = document.createElement('button');
+    bell.type = 'button';
+    bell.className = 'topbar__notif-btn';
+    bell.setAttribute('aria-label', 'Notifications');
+    topbarRight.insertBefore(bell, topbarRight.firstChild);
+  }
+
   if (!bell || bell.dataset.notifBound === '1') {
     return;
   }
   bell.dataset.notifBound = '1';
 
-  var dot = document.querySelector('.topbar__notif-dot');
+  bell.classList.remove('topbar__notif');
+  bell.classList.add('topbar__notif-btn');
+  bell.innerHTML = '<svg class="topbar__notif-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="topbar__notif-dot" aria-label="No new notifications"></span>';
+
+  var dot = bell.querySelector('.topbar__notif-dot');
   var dropdown = null;
   var isOpen = false;
 
@@ -111,12 +125,18 @@
   function renderItems(items) {
     ensureDropdown();
 
+    var html = '<div style="padding:10px 14px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;">';
+    html += '<span style="font-weight:700;font-size:14px;color:#0f172a;">Recent Notifications</span>';
+    if (Array.isArray(items) && items.length > 0) {
+      html += '<button id="notif-mark-all-read" style="background:none;border:none;color:#2563eb;font-size:12px;font-weight:600;cursor:pointer;padding:2px 6px;">Mark all as read</button>';
+    }
+    html += '</div>';
+
     if (!Array.isArray(items) || items.length === 0) {
-      dropdown.innerHTML = '<div style="padding:14px 16px;color:#6b7280;font-size:14px;">No recent notifications.</div>';
+      dropdown.innerHTML = html + '<div style="padding:14px 16px;color:#6b7280;font-size:14px;">No recent notifications.</div>';
       return;
     }
 
-    var html = '<div style="padding:10px 14px;border-bottom:1px solid #f1f5f9;font-weight:700;font-size:14px;color:#0f172a;">Recent Notifications</div>';
     html += '<div style="max-height:340px;overflow:auto;">';
 
     items.forEach(function (item) {
@@ -215,10 +235,35 @@
     if (!isOpen) {
       return;
     }
-    if (event.target.closest && (event.target.closest('.topbar__notif') || event.target.closest('.topbar__notif-btn') || event.target.closest('#admin-notif-dropdown'))) {
+    if (event.target.closest && (event.target.closest('.topbar__notif-btn') || event.target.closest('#admin-notif-dropdown'))) {
       return;
     }
     closeDropdown();
+  });
+
+  document.addEventListener('click', function (event) {
+    if (event.target && event.target.id === 'notif-mark-all-read') {
+      event.preventDefault();
+      var btn = event.target;
+      btn.disabled = true;
+      btn.textContent = 'Marking...';
+
+      postForm('notifications_mark_read.php', { mark_all: '1' })
+        .then(function () {
+          updateBell(0);
+          return fetchJson('notifications_list.php');
+        })
+        .then(function (data) {
+          if (data && data.success) {
+            renderItems(data.items || []);
+          }
+        })
+        .catch(function (err) {
+          console.error('Failed to mark all read:', err);
+          btn.disabled = false;
+          btn.textContent = 'Mark all as read';
+        });
+    }
   });
 
   document.addEventListener('click', function (event) {
@@ -243,6 +288,14 @@
       postForm('notifications_mark_read.php', {
         type: 'report',
         report_id: String(reportId)
+      });
+      return;
+    }
+
+    if (type === 'announcement' && notificationId > 0) {
+      postForm('notifications_mark_read.php', {
+        type: 'announcement',
+        notification_id: String(notificationId)
       });
     }
   });

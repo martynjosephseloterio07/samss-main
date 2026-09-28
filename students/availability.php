@@ -7,6 +7,12 @@ $submission = $_SESSION['registration_submission'] ?? [];
 $user = sams_authenticated_user();
 
 $isRegistration = !empty($_SESSION['registration_submission']);
+if (!$isRegistration) {
+    if (!$user || ($user['role'] ?? null) !== 'student') {
+        header('Location: ../login.php');
+        exit;
+    }
+}
 $pageTitle = $isRegistration ? 'Complete Your Application' : 'Set Your Availability';
 $pageSubtitle = $isRegistration 
     ? 'Please set your weekly time availability below to complete and submit your application.' 
@@ -76,6 +82,7 @@ $days = [
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title><?= htmlspecialchars($pageTitle) ?> – SAMS Student Portal</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/css/sams-shell.css" />
 
     <style>
         :root {
@@ -391,6 +398,7 @@ $days = [
             }
         }
     </style>
+<link rel="stylesheet" href="../assets/css/sams-dark-mode.css?v=20260926" />
 </head>
 
 <body>
@@ -649,5 +657,6 @@ $days = [
         }
     })();
     </script>
+<script src="../assets/js/sams-theme.js?v=20260926"></script>
 </body>
 </html>

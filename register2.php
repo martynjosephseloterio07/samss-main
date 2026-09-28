@@ -19,28 +19,63 @@ $step4_link = (!empty($_SESSION['sams_registration']['step1']) && !empty($_SESSI
 
 $errors = [];
 $success = false;
+$pdo = sams_pdo();
+$currentTerm = sams_current_term($pdo);
+$termLabel = trim((string) ($currentTerm['term_name'] ?? 'Current Term'));
+$termYear = trim((string) ($currentTerm['term_year'] ?? ''));
+$termDisplay = trim($termLabel . ' ' . $termYear);
+
+if ($termDisplay === '') {
+    $termDisplay = 'the current term';
+}
+
+$max_size_5mb = 5 * 1024 * 1024;
+$files = [
+    'resume' => ['label' => 'Resume', 'max' => $max_size_5mb],
+    'intent_letter' => ['label' => 'Letter of Intent addressed to the Assistant Director for Academic Services', 'max' => $max_size_5mb],
+    'parent_consent' => ['label' => 'Parent Consent Form with signature and photocopy of valid ID', 'max' => $max_size_5mb],
+    'recommendation' => ['label' => 'Recommendation Letter from Program Chair/Dean', 'max' => $max_size_5mb],
+    'grades' => ['label' => 'Photocopy of Grades for ' . $termDisplay, 'max' => $max_size_5mb],
+    'class_schedule' => ['label' => 'Copy of Class Schedule for ' . $termDisplay, 'max' => $max_size_5mb],
+    'good_moral' => ['label' => 'Good Moral Certificate from SDAO', 'max' => $max_size_5mb],
+];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $allowed_types = ['application/pdf', 'image/jpeg', 'image/png'];
-    $max_size_5mb = 5 * 1024 * 1024;
+    $allowed_extensions = ['pdf', 'jpg', 'jpeg', 'png'];
     $max_size_2mb = 2 * 1024 * 1024;
 
-    $files = [
-        'cog'   => ['label' => 'Certificate of Grades', 'max' => $max_size_5mb],
-        'valid_id' => ['label' => 'Valid ID',            'max' => $max_size_5mb],
-        'photo' => ['label' => '2x2 Photo',              'max' => $max_size_2mb],
-    ];
-
+    $verified_mimes = [];
     foreach ($files as $key => $config) {
         if (!isset($_FILES[$key]) || $_FILES[$key]['error'] === UPLOAD_ERR_NO_FILE) {
             $errors[$key] = $config['label'] . ' is required.';
         } elseif ($_FILES[$key]['error'] !== UPLOAD_ERR_OK) {
             $errors[$key] = $config['label'] . ' upload failed.';
-        } elseif (!in_array($_FILES[$key]['type'], $allowed_types)) {
-            $errors[$key] = $config['label'] . ' must be PDF, JPG, or PNG.';
-        } elseif ($_FILES[$key]['size'] > $config['max']) {
-            $max_label = ($config['max'] === $max_size_2mb) ? '2MB' : '5MB';
-            $errors[$key] = $config['label'] . ' must not exceed ' . $max_label . '.';
+        } else {
+            $originalName = basename($_FILES[$key]['name']);
+            $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+
+            if (!in_array($extension, $allowed_extensions, true)) {
+                $errors[$key] = $config['label'] . ' must have a PDF, JPG, JPEG, or PNG extension.';
+                continue;
+            }
+
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mimeType = finfo_file($finfo, $_FILES[$key]['tmp_name']);
+            finfo_close($finfo);
+
+            if (!in_array($mimeType, $allowed_types, true)) {
+                $errors[$key] = $config['label'] . ' must be a valid PDF, JPG, or PNG file.';
+                continue;
+            }
+
+            if ($_FILES[$key]['size'] > $config['max']) {
+                $max_label = ($config['max'] === $max_size_2mb) ? '2MB' : '5MB';
+                $errors[$key] = $config['label'] . ' must not exceed ' . $max_label . '.';
+                continue;
+            }
+
+            $verified_mimes[$key] = $mimeType;
         }
     }
 
@@ -57,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $storedFiles = [];
-        foreach (['cog', 'valid_id', 'photo'] as $fileKey) {
+        foreach (array_keys($files) as $fileKey) {
             if (!isset($_FILES[$fileKey]) || $_FILES[$fileKey]['error'] !== UPLOAD_ERR_OK) {
                 continue;
             }
@@ -76,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'original_name' => $originalName,
                 'stored_name' => $safeName,
                 'stored_path' => $targetPath,
-                'mime_type' => $_FILES[$fileKey]['type'] ?? '',
+                'mime_type' => $verified_mimes[$fileKey] ?? '',
                 'size' => (int) ($_FILES[$fileKey]['size'] ?? 0),
             ];
         }
@@ -100,10 +135,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="assets/css/sams-dark-mode.css?v=20260926" />
     <title>Student Assistant Application – Step 3</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="assets/css/sams-design-system.css" />
     <style>
         /* =============================================
            CSS VARIABLES – Design System
@@ -922,20 +959,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     <!-- ── Field 1: Certificate of Grades ── -->
                     <div class="upload-field">
-                        <label class="upload-field__label" for="cog">Certificate of Grades (CoG) *</label>
+                        <label class="upload-field__label" for="resume">Resume *</label>
                         <div
                             class="upload-field__drop-zone<?= (!empty($errors['cog'])) ? ' upload-field__drop-zone--error' : '' ?>"
-                            id="cog-zone"
-                            aria-label="Upload Certificate of Grades"
+                            id="resume-zone"
+                            aria-label="Upload Resume"
                         >
                             <input
                                 class="upload-field__input"
                                 type="file"
-                                id="cog"
-                                name="cog"
+                                id="resume"
+                                name="resume"
                                 accept=".pdf,.jpg,.jpeg,.png"
                                 aria-required="true"
-                                aria-describedby="cog-hint"
+                                aria-describedby="resume-hint"
                             />
                             <!-- Upload icon (matches Figma imgIcon3) -->
                             <svg class="upload-field__drop-icon" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -944,31 +981,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <path d="M40.7804 36.78C42.7296 35.7166 44.2716 34.0338 45.1594 32.0013C46.0472 29.9687 46.2285 27.6982 45.6735 25.5497C45.1185 23.4012 43.8582 21.4979 42.1017 20.1399C40.3452 18.782 38.1944 18.0462 35.9804 18.04H33.4804C32.8679 15.6585 31.7157 13.447 30.1081 11.5771C28.5005 9.7072 26.4797 8.22667 24.2084 7.24577C21.9372 6.26487 19.4741 5.80958 16.9983 5.91403C14.5225 6.01849 12.1082 6.67999 9.92907 7.84974C7.74991 9.01949 5.86003 10.665 4.41036 12.6642C2.96069 14.6634 1.98663 16.9617 1.56253 19.3921C1.13843 21.8225 1.27569 24.3189 1.96366 26.6881C2.65162 29.0573 3.87258 31.2337 5.52044 33.06" stroke="#9ca3af" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
                             <p class="upload-field__drop-title">Click to upload or drag and drop</p>
-                            <p class="upload-field__drop-hint" id="cog-hint">PDF, JPG, or PNG (Max 5MB)</p>
-                            <span class="upload-field__file-name" id="cog-filename" aria-live="polite"></span>
+                            <p class="upload-field__drop-hint" id="resume-hint">PDF, JPG, or PNG (Max 5MB)</p>
+                            <span class="upload-field__file-name" id="resume-filename" aria-live="polite"></span>
                             <span class="upload-field__btn" aria-hidden="true">Choose File</span>
                         </div>
-                        <?php if (!empty($errors['cog'])): ?>
-                            <span class="upload-field__error" role="alert"><?= htmlspecialchars($errors['cog']) ?></span>
+                        <?php if (!empty($errors['resume'])): ?>
+                            <span class="upload-field__error" role="alert"><?= htmlspecialchars($errors['resume']) ?></span>
                         <?php endif; ?>
                     </div>
 
                     <!-- ── Field 2: Valid ID ── -->
                     <div class="upload-field">
-                        <label class="upload-field__label" for="valid_id">Valid ID (School ID or Government ID) *</label>
+                        <label class="upload-field__label" for="intent_letter">Letter of Intent addressed to the Assistant Director for Academic Services *</label>
                         <div
                             class="upload-field__drop-zone<?= (!empty($errors['valid_id'])) ? ' upload-field__drop-zone--error' : '' ?>"
-                            id="valid-id-zone"
-                            aria-label="Upload Valid ID"
+                            id="intent-letter-zone"
+                            aria-label="Upload Letter of Intent"
                         >
                             <input
                                 class="upload-field__input"
                                 type="file"
-                                id="valid_id"
-                                name="valid_id"
+                                id="intent_letter"
+                                name="intent_letter"
                                 accept=".pdf,.jpg,.jpeg,.png"
                                 aria-required="true"
-                                aria-describedby="valid-id-hint"
+                                aria-describedby="intent-letter-hint"
                             />
                             <svg class="upload-field__drop-icon" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                                 <path d="M32 32L24 24L16 32" stroke="#9ca3af" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -976,31 +1013,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <path d="M40.7804 36.78C42.7296 35.7166 44.2716 34.0338 45.1594 32.0013C46.0472 29.9687 46.2285 27.6982 45.6735 25.5497C45.1185 23.4012 43.8582 21.4979 42.1017 20.1399C40.3452 18.782 38.1944 18.0462 35.9804 18.04H33.4804C32.8679 15.6585 31.7157 13.447 30.1081 11.5771C28.5005 9.7072 26.4797 8.22667 24.2084 7.24577C21.9372 6.26487 19.4741 5.80958 16.9983 5.91403C14.5225 6.01849 12.1082 6.67999 9.92907 7.84974C7.74991 9.01949 5.86003 10.665 4.41036 12.6642C2.96069 14.6634 1.98663 16.9617 1.56253 19.3921C1.13843 21.8225 1.27569 24.3189 1.96366 26.6881C2.65162 29.0573 3.87258 31.2337 5.52044 33.06" stroke="#9ca3af" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
                             <p class="upload-field__drop-title">Click to upload or drag and drop</p>
-                            <p class="upload-field__drop-hint" id="valid-id-hint">PDF, JPG, or PNG (Max 5MB)</p>
-                            <span class="upload-field__file-name" id="valid-id-filename" aria-live="polite"></span>
+                            <p class="upload-field__drop-hint" id="intent-letter-hint">PDF, JPG, or PNG (Max 5MB)</p>
+                            <span class="upload-field__file-name" id="intent-letter-filename" aria-live="polite"></span>
                             <span class="upload-field__btn" aria-hidden="true">Choose File</span>
                         </div>
-                        <?php if (!empty($errors['valid_id'])): ?>
-                            <span class="upload-field__error" role="alert"><?= htmlspecialchars($errors['valid_id']) ?></span>
+                        <?php if (!empty($errors['intent_letter'])): ?>
+                            <span class="upload-field__error" role="alert"><?= htmlspecialchars($errors['intent_letter']) ?></span>
                         <?php endif; ?>
                     </div>
 
                     <!-- ── Field 3: 2×2 Photo ── -->
                     <div class="upload-field">
-                        <label class="upload-field__label" for="photo">2x2 Photo (Recent) *</label>
+                        <label class="upload-field__label" for="parent_consent">Letter of Consent from Parent with signature and photocopy of valid ID *</label>
                         <div
                             class="upload-field__drop-zone<?= (!empty($errors['photo'])) ? ' upload-field__drop-zone--error' : '' ?>"
-                            id="photo-zone"
-                            aria-label="Upload 2x2 Photo"
+                            id="parent-consent-zone"
+                            aria-label="Upload Parent Consent"
                         >
                             <input
                                 class="upload-field__input"
                                 type="file"
-                                id="photo"
-                                name="photo"
-                                accept=".jpg,.jpeg,.png"
+                                id="parent_consent"
+                                name="parent_consent"
+                                accept=".pdf,.jpg,.jpeg,.png"
                                 aria-required="true"
-                                aria-describedby="photo-hint"
+                                aria-describedby="parent-consent-hint"
                             />
                             <svg class="upload-field__drop-icon" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                                 <path d="M32 32L24 24L16 32" stroke="#9ca3af" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1008,14 +1045,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <path d="M40.7804 36.78C42.7296 35.7166 44.2716 34.0338 45.1594 32.0013C46.0472 29.9687 46.2285 27.6982 45.6735 25.5497C45.1185 23.4012 43.8582 21.4979 42.1017 20.1399C40.3452 18.782 38.1944 18.0462 35.9804 18.04H33.4804C32.8679 15.6585 31.7157 13.447 30.1081 11.5771C28.5005 9.7072 26.4797 8.22667 24.2084 7.24577C21.9372 6.26487 19.4741 5.80958 16.9983 5.91403C14.5225 6.01849 12.1082 6.67999 9.92907 7.84974C7.74991 9.01949 5.86003 10.665 4.41036 12.6642C2.96069 14.6634 1.98663 16.9617 1.56253 19.3921C1.13843 21.8225 1.27569 24.3189 1.96366 26.6881C2.65162 29.0573 3.87258 31.2337 5.52044 33.06" stroke="#9ca3af" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
                             <p class="upload-field__drop-title">Click to upload or drag and drop</p>
-                            <p class="upload-field__drop-hint" id="photo-hint">JPG or PNG (Max 2MB)</p>
-                            <span class="upload-field__file-name" id="photo-filename" aria-live="polite"></span>
+                            <p class="upload-field__drop-hint" id="parent-consent-hint">PDF, JPG, or PNG (Max 5MB)</p>
+                            <span class="upload-field__file-name" id="parent-consent-filename" aria-live="polite"></span>
                             <span class="upload-field__btn" aria-hidden="true">Choose File</span>
                         </div>
-                        <?php if (!empty($errors['photo'])): ?>
-                            <span class="upload-field__error" role="alert"><?= htmlspecialchars($errors['photo']) ?></span>
+                        <?php if (!empty($errors['parent_consent'])): ?>
+                            <span class="upload-field__error" role="alert"><?= htmlspecialchars($errors['parent_consent']) ?></span>
                         <?php endif; ?>
                     </div>
+
+                    <?php foreach (['recommendation', 'grades', 'class_schedule', 'good_moral'] as $fileKey): ?>
+                        <?php $fieldId = str_replace('_', '-', $fileKey); ?>
+                        <div class="upload-field">
+                            <label class="upload-field__label" for="<?= htmlspecialchars($fileKey) ?>"><?= htmlspecialchars($files[$fileKey]['label']) ?> *</label>
+                            <div
+                                class="upload-field__drop-zone<?= !empty($errors[$fileKey]) ? ' upload-field__drop-zone--error' : '' ?>"
+                                id="<?= htmlspecialchars($fieldId) ?>-zone"
+                                aria-label="Upload <?= htmlspecialchars($files[$fileKey]['label']) ?>"
+                            >
+                                <input
+                                    class="upload-field__input"
+                                    type="file"
+                                    id="<?= htmlspecialchars($fileKey) ?>"
+                                    name="<?= htmlspecialchars($fileKey) ?>"
+                                    accept=".pdf,.jpg,.jpeg,.png"
+                                    aria-required="true"
+                                    aria-describedby="<?= htmlspecialchars($fieldId) ?>-hint"
+                                />
+                                <p class="upload-field__drop-title">Click to upload or drag and drop</p>
+                                <p class="upload-field__drop-hint" id="<?= htmlspecialchars($fieldId) ?>-hint">PDF, JPG, or PNG (Max 5MB)</p>
+                                <span class="upload-field__file-name" id="<?= htmlspecialchars($fieldId) ?>-filename" aria-live="polite"></span>
+                                <span class="upload-field__btn" aria-hidden="true">Choose File</span>
+                            </div>
+                            <?php if (!empty($errors[$fileKey])): ?>
+                                <span class="upload-field__error" role="alert"><?= htmlspecialchars($errors[$fileKey]) ?></span>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
 
                 </div><!-- /upload-fields -->
 
@@ -1070,9 +1136,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     /* ── Upload zone interactions ── */
     const zones = [
-        { zoneId: 'cog-zone',      inputId: 'cog',      filenameId: 'cog-filename' },
-        { zoneId: 'valid-id-zone', inputId: 'valid_id', filenameId: 'valid-id-filename' },
-        { zoneId: 'photo-zone',    inputId: 'photo',    filenameId: 'photo-filename' },
+        { zoneId: 'resume-zone', inputId: 'resume', filenameId: 'resume-filename' },
+        { zoneId: 'intent-letter-zone', inputId: 'intent_letter', filenameId: 'intent-letter-filename' },
+        { zoneId: 'parent-consent-zone', inputId: 'parent_consent', filenameId: 'parent-consent-filename' },
+        { zoneId: 'recommendation-zone', inputId: 'recommendation', filenameId: 'recommendation-filename' },
+        { zoneId: 'grades-zone', inputId: 'grades', filenameId: 'grades-filename' },
+        { zoneId: 'class-schedule-zone', inputId: 'class_schedule', filenameId: 'class-schedule-filename' },
+        { zoneId: 'good-moral-zone', inputId: 'good_moral', filenameId: 'good-moral-filename' },
     ];
 
     zones.forEach(function (cfg) {
@@ -1120,5 +1190,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 })();
 </script>
 
+<script src="assets/js/sams-theme.js?v=20260926"></script>
 </body>
 </html>

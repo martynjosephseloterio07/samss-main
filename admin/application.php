@@ -9,9 +9,11 @@ if (!$currentUser || ($currentUser['role'] ?? null) !== 'admin') {
   header('Location: ../login.php');
   exit;
 }
+$admin_name = (string) ($currentUser['name'] ?? 'SAMS Admin');
 
 $flashMessage = '';
 $flashError = '';
+$officeOptions = sams_office_options();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $applicationId = (int) ($_POST['application_id'] ?? 0);
@@ -85,6 +87,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $availRows = $availStmt->fetchAll(PDO::FETCH_ASSOC);
 
         if (!empty($availRows)) {
+            // Delete existing duty schedules before inserting to prevent duplicates
+            $delAppStmt = $pdo->prepare('DELETE FROM duty_schedules WHERE application_id = :application_id');
+            $delAppStmt->execute(['application_id' => $applicationId]);
+
             $hasOfficeColumn = sams_column_exists($pdo, 'duty_schedules', 'office_name');
             if ($hasOfficeColumn) {
                 $insertAppStmt = $pdo->prepare(
@@ -1264,7 +1270,7 @@ $pendingApplications = (int) $applicationCounts['pending'];
           <span class="topbar__notif-dot" aria-label="New notifications"></span>
         </div>
         <div class="topbar__user-info">
-          <div class="topbar__user-name">Zaira Joy S. Enayo</div>
+          <div class="topbar__user-name"><?= htmlspecialchars($admin_name, ENT_QUOTES, 'UTF-8') ?></div>
           <div class="topbar__user-role">SDAO Head</div>
         </div>
         <div class="topbar__avatar">
@@ -1454,7 +1460,18 @@ $pendingApplications = (int) $applicationCounts['pending'];
                 </td>
                 <td data-label="Student ID"><?= htmlspecialchars((string) ($application['student_id_number'] ?? '')) ?></td>
                 <td data-label="Program"><?= htmlspecialchars((string) ($application['program'] ?? '')) ?></td>
-                <td data-label="Preferred Office"><?= htmlspecialchars((string) ($application['preferred_office'] ?? '')) ?></td>
+                <td data-label="Preferred Office">
+                  <form method="post" action="reassign_office.php" style="display:flex;gap:6px;align-items:center;min-width:260px;">
+                    <?= sams_csrf_input_field() ?>
+                    <input type="hidden" name="application_id" value="<?= (int) $application['application_id'] ?>" />
+                    <select name="preferred_office" style="max-width:220px;" <?= !in_array($status, ['pending', 'approved'], true) ? 'disabled' : '' ?>>
+                      <?php foreach ($officeOptions as $officeOption): ?>
+                        <option value="<?= htmlspecialchars($officeOption, ENT_QUOTES, 'UTF-8') ?>" <?= $officeOption === (string) ($application['preferred_office'] ?? '') ? 'selected' : '' ?>><?= htmlspecialchars($officeOption, ENT_QUOTES, 'UTF-8') ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                    <?php if (in_array($status, ['pending', 'approved'], true)): ?><button type="submit" class="action-btn" title="Update preferred office" aria-label="Update preferred office">Save</button><?php endif; ?>
+                  </form>
+                </td>
                 <td data-label="Skills">
                   <div class="skills">
                     <?php if (empty($skills)): ?>
@@ -2076,7 +2093,7 @@ $pendingApplications = (int) $applicationCounts['pending'];
   }());
 </script>
 
-<script src="../assets/js/admin-notifications.js"></script>
+<script src="../assets/js/admin-notifications.js?v=20260922"></script>
 
 </body>
 </html>

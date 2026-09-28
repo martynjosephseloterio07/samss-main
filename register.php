@@ -39,11 +39,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (!sams_column_exists($pdo, 'students', 'student_id_number')) {
         throw new RuntimeException('Students table must have student_id_number column.');
       }
+      if (!sams_column_exists($pdo, 'users', 'phone_number')) {
+        throw new RuntimeException('Users table must have phone_number column. Please apply the latest database migration.');
+      }
 
-      $duplicateStatement = $pdo->prepare('SELECT COUNT(*) FROM students WHERE student_id_number = :student_id');
-      $duplicateStatement->execute(['student_id' => $values['student_id']]);
+      $normalizedPhone = preg_replace('/\D+/', '', $values['contact_number']);
 
-      if ((int) $duplicateStatement->fetchColumn() > 0) {
+      $duplicateStatement = $pdo->prepare(
+        'SELECT
+            (SELECT COUNT(*) FROM users WHERE email = :email) AS email_count,
+            (SELECT COUNT(*) FROM users WHERE phone_number = :phone_number) AS phone_count,
+            (SELECT COUNT(*) FROM students WHERE student_id_number = :student_id) AS student_count'
+      );
+      $duplicateStatement->execute([
+        'email' => $values['email'],
+        'phone_number' => $normalizedPhone,
+        'student_id' => $values['student_id'],
+      ]);
+      $duplicateCounts = $duplicateStatement->fetch(PDO::FETCH_ASSOC) ?: [];
+
+      if ((int) ($duplicateCounts['email_count'] ?? 0) > 0) {
+        $errors['email'] = 'This email is already registered. Please use a different email or log in.';
+      }
+
+      if ((int) ($duplicateCounts['phone_count'] ?? 0) > 0) {
+        $errors['contact_number'] = 'This phone number is already registered. Please use a different phone number.';
+      }
+
+      if ((int) ($duplicateCounts['student_count'] ?? 0) > 0) {
         $errors['student_id'] = 'This student ID is already registered. Please use a different student ID or log in.';
       }
     }
@@ -94,11 +117,13 @@ function sams_register_first_existing_column(PDO $pdo, string $table, array $col
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="assets/css/sams-dark-mode.css?v=20260926" />
   <title>Apply – Student Assistant | SAMS NU Lipa</title>
   <meta name="description" content="Apply as a Student Assistant at National University Lipa through SAMS." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/sams-design-system.css" />
   <style>
     /* =============================================
        CSS VARIABLES / DESIGN TOKENS
@@ -214,7 +239,7 @@ function sams_register_first_existing_column(PDO $pdo, string $table, array $col
       justify-content: center;
       margin-bottom: var(--space-5);
     }
-    .page-header__icon-wrap img { width: 32px; height: 32px; }
+    .page-header__icon-wrap img, .page-header__icon-wrap svg { width: 32px; height: 32px; }
     .page-header__title {
       font-size: var(--font-2xl);
       font-weight: 900;
@@ -449,7 +474,7 @@ function sams_register_first_existing_column(PDO $pdo, string $table, array $col
       transition: background .2s;
     }
     .form-nav__back:hover { background: #d1d5db; }
-    .form-nav__back img { width: 20px; height: 20px; }
+    .form-nav__back img, .form-nav__back svg { width: 20px; height: 20px; display: block; }
     .form-nav__next {
       display: inline-flex;
       align-items: center;
@@ -467,7 +492,7 @@ function sams_register_first_existing_column(PDO $pdo, string $table, array $col
       transition: opacity .2s;
     }
     .form-nav__next:hover { opacity: .88; }
-    .form-nav__next img { width: 20px; height: 20px; }
+    .form-nav__next img, .form-nav__next svg { width: 20px; height: 20px; display: block; }
 
     /* =============================================
        RESPONSIVE – TABLET (≤1024px)
@@ -507,22 +532,14 @@ function sams_register_first_existing_column(PDO $pdo, string $table, array $col
 
     <!-- Back to Home -->
     <a class="back-link" href="index.php">
-      <img
-        class="back-link__icon"
-        src="https://www.figma.com/api/mcp/asset/d7b8649b-6ce9-4b30-bc12-f47e2ec8ace8"
-        alt=""
-        aria-hidden="true"
-      />
+      <svg class="back-link__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Back to Home
     </a>
 
     <!-- Page header -->
     <header class="page-header">
       <div class="page-header__icon-wrap" aria-hidden="true">
-        <img
-          src="https://www.figma.com/api/mcp/asset/02563ae0-6f2d-41f7-970b-4365358e3511"
-          alt="Graduation cap icon"
-        />
+        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="m3 12 13-7 13 7-13 7L3 12Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 15v6c3 3 13 3 16 0v-6M29 12v7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </div>
       <h1 class="page-header__title">Student Assistant Application</h1>
       <p class="page-header__subtitle">Complete the 4-step process to apply</p>
@@ -580,12 +597,7 @@ function sams_register_first_existing_column(PDO $pdo, string $table, array $col
     <!-- Personal Information form card -->
     <section class="form-card" aria-labelledby="personal-info-heading">
       <div class="form-card__heading">
-        <img
-          class="form-card__heading-icon"
-          src="https://www.figma.com/api/mcp/asset/4163249c-8cd8-47ad-bbd7-1bf885fe7a65"
-          alt=""
-          aria-hidden="true"
-        />
+        <svg class="form-card__heading-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8"/><path d="M4 21c.8-4.1 3.5-6 8-6s7.2 1.9 8 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         <h2 class="form-card__heading-text" id="personal-info-heading">Personal Information</h2>
       </div>
 
@@ -699,11 +711,7 @@ function sams_register_first_existing_column(PDO $pdo, string $table, array $col
     <div class="form-nav">
 
       <a class="form-nav__back" href="index.php" aria-label="Go back to home">
-        <img
-          src="https://www.figma.com/api/mcp/asset/62767a77-da7b-4e87-8a2d-384e7bf5b1eb"
-          alt=""
-          aria-hidden="true"
-        />
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Back
       </a>
 
@@ -714,11 +722,7 @@ function sams_register_first_existing_column(PDO $pdo, string $table, array $col
         aria-label="Proceed to next step"
       >
         Next
-        <img
-          src="https://www.figma.com/api/mcp/asset/2372ea79-f063-4762-93b1-9d0f4285ac4a"
-          alt=""
-          aria-hidden="true"
-        />
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
 
     </div>
@@ -776,5 +780,6 @@ function sams_register_first_existing_column(PDO $pdo, string $table, array $col
     })();
   </script>
 
+<script src="assets/js/sams-theme.js?v=20260926"></script>
 </body>
 </html>

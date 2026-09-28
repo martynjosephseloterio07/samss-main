@@ -68,16 +68,74 @@ function sams_send_schedule_email(string $toEmail, string $toName, string $actio
     }
 }
 
+function sams_send_supervisor_account_email(
+    string $toEmail,
+    string $toName,
+    string $temporaryPassword,
+    string $officeName,
+    int $maxStudents
+): void {
+    require_once __DIR__ . '/../vendor/autoload.php';
+
+    $config = sams_mail_config();
+    $safeName = htmlspecialchars($toName, ENT_QUOTES, 'UTF-8');
+    $safeEmail = htmlspecialchars($toEmail, ENT_QUOTES, 'UTF-8');
+    $safePassword = htmlspecialchars($temporaryPassword, ENT_QUOTES, 'UTF-8');
+    $safeOffice = htmlspecialchars($officeName, ENT_QUOTES, 'UTF-8');
+    $loginUrl = 'http://localhost/samss-main/login.php';
+    $message = 'Hello ' . $safeName . ',<br><br>'
+        . 'An administrator created your SAMS Supervisor account.<br><br>'
+        . '<strong>Email:</strong> ' . $safeEmail . '<br>'
+        . '<strong>Temporary password:</strong> ' . $safePassword . '<br>'
+        . '<strong>Assigned office:</strong> ' . $safeOffice . '<br>'
+        . '<strong>Student capacity:</strong> ' . $maxStudents . '<br><br>'
+        . 'For security, you must change this temporary password after your first login.';
+
+    $mailer = new PHPMailer\PHPMailer\PHPMailer(true);
+    $mailer->CharSet = 'UTF-8';
+    $mailer->setFrom($config['from_email'], $config['from_name']);
+    $mailer->addAddress($toEmail, $toName);
+    sams_configure_mailer($mailer, $config);
+    $mailer->isHTML(true);
+    $mailer->Subject = 'Your SAMS Supervisor account';
+    $mailer->Body = sams_build_branded_email(
+        'SAMS Supervisor Access',
+        'Your account is ready',
+        $message,
+        '#003087',
+        'Open SAMS Login',
+        $loginUrl,
+        true
+    );
+    $mailer->AltBody = "Hello {$toName},\n\nYour SAMS Supervisor account is ready.\nEmail: {$toEmail}\nTemporary password: {$temporaryPassword}\nAssigned office: {$officeName}\nStudent capacity: {$maxStudents}\n\nChange the temporary password after your first login: {$loginUrl}";
+
+    try {
+        $mailer->send();
+    } catch (Throwable $exception) {
+        error_log('[sams] Supervisor account mailer failed: ' . $exception->getMessage());
+        throw $exception;
+    }
+}
+
 function sams_mail_config(): array
 {
+    $username = trim((string) ($_ENV['SAMS_MAIL_USERNAME'] ?? getenv('SAMS_MAIL_USERNAME') ?: ''));
+    $fromEmail = trim((string) ($_ENV['SAMS_MAIL_FROM_EMAIL'] ?? getenv('SAMS_MAIL_FROM_EMAIL') ?: ''));
+    if ($fromEmail === '' && filter_var($username, FILTER_VALIDATE_EMAIL)) {
+        $fromEmail = $username;
+    }
+    if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
+        throw new RuntimeException('Set SAMS_MAIL_FROM_EMAIL to a valid email address in your .env file.');
+    }
+
     return [
         'mode' => $_ENV['SAMS_MAIL_MODE'] ?? getenv('SAMS_MAIL_MODE') ?: 'smtp',
         'host' => $_ENV['SAMS_MAIL_HOST'] ?? getenv('SAMS_MAIL_HOST') ?: 'smtp.gmail.com',
         'port' => (int) ($_ENV['SAMS_MAIL_PORT'] ?? getenv('SAMS_MAIL_PORT') ?: 587),
-        'username' => $_ENV['SAMS_MAIL_USERNAME'] ?? getenv('SAMS_MAIL_USERNAME') ?: '',
+        'username' => $username,
         'password' => $_ENV['SAMS_MAIL_PASSWORD'] ?? getenv('SAMS_MAIL_PASSWORD') ?: '',
         'encryption' => $_ENV['SAMS_MAIL_ENCRYPTION'] ?? getenv('SAMS_MAIL_ENCRYPTION') ?: 'tls',
-        'from_email' => $_ENV['SAMS_MAIL_FROM_EMAIL'] ?? getenv('SAMS_MAIL_FROM_EMAIL') ?: '',
+        'from_email' => $fromEmail,
         'from_name' => $_ENV['SAMS_MAIL_FROM_NAME'] ?? getenv('SAMS_MAIL_FROM_NAME') ?: 'SAMS Notifications',
         'test_to_email' => $_ENV['SAMS_MAIL_TEST_TO_EMAIL'] ?? getenv('SAMS_MAIL_TEST_TO_EMAIL') ?: '',
     ];

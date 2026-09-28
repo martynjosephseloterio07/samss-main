@@ -4,6 +4,12 @@ declare(strict_types=1);
 require_once __DIR__ . '/config/bootstrap.php';
 require_once __DIR__ . '/config/mail.php';
 
+$currentUser = sams_authenticated_user();
+if ($currentUser) {
+  header('Location: ' . sams_dashboard_for_role($currentUser['role']));
+  exit;
+}
+
 $error = '';
 $success = '';
 $showOtpModal = false;
@@ -135,11 +141,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="assets/css/sams-dark-mode.css?v=20260926" />
   <title>Login – SAMS | NU Lipa</title>
   <meta name="description" content="Login to SAMS – the Student Assistant Management System for National University Lipa." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/sams-design-system.css" />
   <style>
     /* =============================================
        CSS VARIABLES / DESIGN TOKENS
@@ -273,8 +281,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       flex-shrink: 0;
     }
     .brand-card__title {
+      font-family: var(--font-display, 'Poppins', sans-serif);
       font-size: var(--font-3xl);
-      font-weight: 900;
+      font-weight: 800;
       color: var(--color-white);
       line-height: 1.2;
     }
@@ -287,8 +296,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     /* Heading & paragraph */
     .brand-card__heading {
+      font-family: var(--font-display, 'Poppins', sans-serif);
       font-size: var(--font-4xl);
-      font-weight: 900;
+      font-weight: 800;
       color: var(--color-white);
       line-height: 1.25;
       margin-bottom: var(--space-4);
@@ -358,10 +368,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     /* Card heading */
     .login-card__heading {
+      font-family: var(--font-display, 'Poppins', sans-serif);
       font-size: var(--font-4xl);
-      font-weight: 900;
+      font-weight: 800;
       color: var(--color-dark);
-      line-height: 1.11;
+      line-height: 1.15;
       margin-bottom: var(--space-2);
     }
     .login-card__tagline {
@@ -497,10 +508,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       line-height: 1;
     }
     .login-form__submit:hover { opacity: .88; }
-    .login-form__submit img {
+    .login-form__submit img,
+    .login-form__submit svg {
       width: 24px;
       height: 24px;
       flex-shrink: 0;
+      display: block;
     }
 
     /* Footer links below form */
@@ -561,10 +574,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       gap: 16px;
     }
     .otp-modal__title {
+      font-family: var(--font-display, 'Poppins', sans-serif);
       margin: 0 0 8px;
-      font-size: 28px;
-      line-height: 1.1;
-      font-weight: 900;
+      font-size: 26px;
+      line-height: 1.2;
+      font-weight: 700;
       color: var(--color-dark);
     }
     .otp-modal__subtitle {
@@ -806,11 +820,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
           <!-- Submit -->
           <button class="login-form__submit" type="submit">
-            <img
-              src="https://www.figma.com/api/mcp/asset/c5624380-e6ad-4e87-ae39-38852df4717f"
-              alt=""
-              aria-hidden="true"
-            />
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Login
           </button>
 
@@ -861,7 +871,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <form method="POST" autocomplete="off">
           <input type="hidden" name="action" value="verify_otp" />
           <div class="otp-modal__otp" id="otpSlots">
-            <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-slot" aria-label="Digit 1" />
+            <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-slot" aria-label="Digit 1" autocomplete="one-time-code" />
             <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-slot" aria-label="Digit 2" />
             <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-slot" aria-label="Digit 3" />
             <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-slot" aria-label="Digit 4" />
@@ -961,6 +971,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         otpSlots.forEach(function(input, idx) {
           input.addEventListener('input', function(e) {
             var v = input.value.replace(/\D/g, '');
+            if (v.length > 1) {
+              v.split('').slice(0, 6).forEach(function(digit, digitIdx) {
+                if (otpSlots[idx + digitIdx]) otpSlots[idx + digitIdx].value = digit;
+              });
+              updateOtpHidden();
+              if (otpSlots[Math.min(idx + v.length, 5)]) otpSlots[Math.min(idx + v.length, 5)].focus();
+              return;
+            }
             input.value = v;
             if (v && idx < 5) otpSlots[idx+1].focus();
             updateOtpHidden();
@@ -1021,5 +1039,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     })();
   </script>
 
+<script src="assets/js/sams-theme.js?v=20260926"></script>
 </body>
 </html>

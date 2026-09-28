@@ -15,7 +15,7 @@ function sams_report_time_label(?string $time): string
 
 function sams_report_hours_label(float $hours): string
 {
-		return number_format(max(0, $hours), 1) . ' hrs';
+		return sams_attendance_format_duration((int) round(max(0, $hours) * 3600));
 }
 
 function sams_report_status_label(string $status): string
@@ -61,15 +61,15 @@ function sams_report_first_existing_column(PDO $pdo, string $table, array $colum
 
 function sams_report_hours_from_row(array $row): float
 {
+		$timeIn = !empty($row['time_in']) ? strtotime((string) $row['time_in']) : false;
+		$timeOut = !empty($row['time_out']) ? strtotime((string) $row['time_out']) : false;
+		if ($timeIn !== false && $timeOut !== false && $timeOut > $timeIn) {
+				return ($timeOut - $timeIn) / 3600;
+		}
+
 		$hoursColumn = $row['rendered_hours'] ?? null;
 		if ($hoursColumn !== null && $hoursColumn !== '') {
 				return (float) $hoursColumn;
-		}
-
-		$timeIn = !empty($row['time_in']) ? strtotime((string) $row['time_in']) : false;
-		$timeOut = !empty($row['time_out']) ? strtotime((string) $row['time_out']) : false;
-		if ($timeIn && $timeOut && $timeOut > $timeIn) {
-				return ($timeOut - $timeIn) / 3600;
 		}
 
 		return 0.0;
@@ -684,6 +684,7 @@ function h(?string $value): string
 		}
 	</style>
 	<link rel="stylesheet" href="../assets/css/sams-shell.css" />
+<link rel="stylesheet" href="../assets/css/sams-dark-mode.css?v=20260926" />
 </head>
 <body>
 	<div class="layout">
@@ -699,30 +700,30 @@ function h(?string $value): string
 			<nav class="sidebar__nav" aria-label="Student navigation">
 				<a href="dashboard.php" class="nav-item">
 					<svg class="nav-item__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-						<path d="M3 11.5L12 4l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-						<path d="M5 10.5V20h5v-5h4v5h5v-9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+						<path d="M3 11.5L12 4l9 7.5" stroke="#101828" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff" />
+						<path d="M5 10.5V20h5v-5h4v5h5v-9.5" stroke="#101828" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff" />
 					</svg>
 					Dashboard
 				</a>
 				<a href="schedule.php" class="nav-item">
 					<svg class="nav-item__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-						<rect x="4" y="5" width="16" height="15" rx="2" stroke="currentColor" stroke-width="1.8" />
-						<path d="M8 3v4M16 3v4M4 9h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+						<rect x="4" y="5" width="16" height="15" rx="2" stroke="#101828" stroke-width="1.8" fill="#ffffff" />
+						<path d="M8 3v4M16 3v4M4 9h16" stroke="#101828" stroke-width="1.8" stroke-linecap="round" fill="none" />
 					</svg>
 					My Schedule
 				</a>
 				<a href="attendance_history.php" class="nav-item nav-item--active" aria-current="page">
 					<svg class="nav-item__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-						<path d="M5 4h10l4 4v12H5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
-						<path d="M15 4v4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-						<path d="M8 11h8M8 15h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+						<path d="M5 4h10l4 4v12H5z" stroke="#101828" stroke-width="1.8" stroke-linejoin="round" fill="#ffffff" />
+						<path d="M15 4v4h4" stroke="#101828" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff" />
+						<path d="M8 11h8M8 15h8" stroke="#101828" stroke-width="1.8" stroke-linecap="round" fill="none" />
 					</svg>
 					Duty-Hour Report
 				</a>
 				<a href="profile.php" class="nav-item">
 					<svg class="nav-item__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-						<circle cx="12" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8" />
-						<path d="M6.5 19c1.4-3.1 4-4.8 5.5-4.8S15.6 15.9 17 19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+						<circle cx="12" cy="8" r="3.2" stroke="#101828" stroke-width="1.8" fill="#ffffff" />
+						<path d="M6.5 19c1.4-3.1 4-4.8 5.5-4.8S15.6 15.9 17 19" stroke="#101828" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="#ffffff" />
 					</svg>
 					Profile
 				</a>
@@ -835,5 +836,7 @@ function h(?string $value): string
 			</div>
 		</main>
 	</div>
+<script src="../assets/js/sams-theme.js?v=20260926"></script>
 </body>
+<!-- SAMS Student Portal Attendance History -->
 </html>

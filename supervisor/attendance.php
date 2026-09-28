@@ -65,7 +65,7 @@ $metrics = [
     'late' => 0,
     'absent' => 0,
     'total' => 0,
-    'rendered_hours' => 0.0,
+    'rendered_seconds' => 0,
 ];
 
 $rows = [];
@@ -77,6 +77,10 @@ foreach ($todayRows as $row) {
 
     $timeInRaw = $row['time_in'] ?? null;
     $timeOutRaw = $row['time_out'] ?? null;
+    $duration = sams_attendance_duration_label(
+        !empty($timeInRaw) ? (string) $timeInRaw : null,
+        !empty($timeOutRaw) ? (string) $timeOutRaw : null
+    );
     $timeIn = $timeInRaw ? date('g:i A', strtotime((string) $timeInRaw)) : '-';
     $timeOut = $timeOutRaw ? date('g:i A', strtotime((string) $timeOutRaw)) : ($timeInRaw ? 'In Progress' : '-');
 
@@ -92,8 +96,8 @@ foreach ($todayRows as $row) {
     if (!empty($row['time_in']) && !empty($row['time_out'])) {
         $inTs = strtotime((string) $row['time_in']);
         $outTs = strtotime((string) $row['time_out']);
-        if ($inTs && $outTs && $outTs > $inTs) {
-            $metrics['rendered_hours'] += ($outTs - $inTs) / 3600;
+        if ($inTs !== false && $outTs !== false && $outTs > $inTs) {
+            $metrics['rendered_seconds'] += $outTs - $inTs;
         }
     }
 
@@ -103,6 +107,7 @@ foreach ($todayRows as $row) {
         'office' => (string) ($row['office_name'] ?? '-'),
         'time_in' => $timeIn,
         'time_out' => $timeOut,
+        'duration' => $duration,
         'status' => match ($status) {
             'present', 'completed' => 'Present',
             'late' => 'Late',
@@ -132,6 +137,8 @@ $pageTitle = 'Attendance Monitoring | Supervisor Portal';
     <link rel="stylesheet" href="../assets/css/sams-shell.css" />
     <link rel="stylesheet" href="../assets/css/sams-theme-admin.css" />
     <link rel="stylesheet" href="../assets/css/supervisor-notifications.css" />
+    <link rel="stylesheet" href="../assets/css/sams-dark-mode.css?v=20260926" />
+    <link rel="stylesheet" href="../assets/css/notifications-shell.css?v=20260922" />
     <style>
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
         body{font-family:Inter,Arial,Helvetica,sans-serif;background:var(--color-bg-app);color:var(--color-heading);min-height:100vh;display:flex}
@@ -252,6 +259,7 @@ $pageTitle = 'Attendance Monitoring | Supervisor Portal';
                     <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" fill="#4A5565"/></svg>
                     <span class="topbar__notif-dot" aria-hidden="true" style="display:none"></span>
                 </div>
+                <a href="profile.php" class="button button--neutral"><?php echo htmlspecialchars($supervisorName, ENT_QUOTES, 'UTF-8'); ?></a>
                 <form method="get" class="inline-form">
                     <select class="select" name="refresh" aria-label="Auto refresh">
                         <option value="0">Manual</option>
@@ -292,8 +300,8 @@ $pageTitle = 'Attendance Monitoring | Supervisor Portal';
                     <div class="metric__label">Attendance Rate</div>
                 </div>
                 <div class="metric">
-                    <div class="metric__value"><?php echo number_format((float) $metrics['rendered_hours'], 1); ?>h</div>
-                    <div class="metric__label">Rendered Hours</div>
+                    <div class="metric__value"><?php echo htmlspecialchars(sams_attendance_format_duration((int) $metrics['rendered_seconds'])); ?></div>
+                    <div class="metric__label">Rendered Time</div>
                 </div>
             </div>
 
@@ -316,7 +324,7 @@ $pageTitle = 'Attendance Monitoring | Supervisor Portal';
                                 <th>Time In</th>
                                 <th>Time Out</th>
                                 <th>Status</th>
-                                <th>Rendered Hours</th>
+                                <th>Duration</th>
                             </tr>
                         </thead>
                         <tbody id="attendanceBody">
@@ -334,7 +342,7 @@ $pageTitle = 'Attendance Monitoring | Supervisor Portal';
                                     <td><?php echo htmlspecialchars($row['time_in']); ?></td>
                                     <td><?php echo htmlspecialchars($row['time_out']); ?></td>
                                     <td><span class="badge badge--<?php echo strtolower(htmlspecialchars($row['status'])); ?>"><?php echo htmlspecialchars($row['status']); ?></span></td>
-                                    <td><?php echo (!empty($row['time_in']) && !empty($row['time_out']) && $row['time_out'] !== 'In Progress' && $row['time_out'] !== '-') ? number_format((max(0, strtotime((string) $row['time_out']) - strtotime((string) $row['time_in'])) / 3600), 1) . 'h' : '-'; ?></td>
+                                    <td><?php echo htmlspecialchars($row['duration']); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php else: ?>
@@ -376,6 +384,6 @@ $pageTitle = 'Attendance Monitoring | Supervisor Portal';
     }
 })();
 </script>
-<script src="../assets/js/admin-notifications.js"></script>
+<script src="../assets/js/admin-notifications.js?v=20260922"></script><script src="../assets/js/sams-theme.js?v=20260926"></script>
 </body>
 </html>

@@ -8,8 +8,10 @@ if (!$currentUser || (($currentUser['role'] ?? null) !== 'admin')) {
     header('Location: ../login.php');
     exit;
 }
+$admin_name = (string) ($currentUser['name'] ?? 'SAMS Admin');
 
 $pdo = sams_pdo();
+$attendanceMonthSummary = sams_attendance_month_summary($pdo);
 
 $applicationBadgeCount = (int) $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'pending'")->fetchColumn();
 
@@ -33,21 +35,6 @@ function sams_admin_attendance_dot(string $status): string
     };
 }
 
-function sams_admin_attendance_duration_label(?string $timeIn, ?string $timeOut): string
-{
-    if (empty($timeIn)) {
-        return '-';
-    }
-
-    $start = strtotime($timeIn);
-    $end = !empty($timeOut) ? strtotime($timeOut) : false;
-    if ($start && $end && $end > $start) {
-        return number_format(($end - $start) / 3600, 1) . 'h';
-    }
-
-    return '-';
-}
-
 $todayRows = [];
 if ($activeTermId > 0) {
     $todayRowsStmt = $pdo->prepare(
@@ -63,13 +50,14 @@ if ($activeTermId > 0) {
              FROM attendance_logs al2
              WHERE al2.application_id = ds.application_id
                AND al2.duty_id = ds.duty_id
+               AND DATE(al2.created_at) = CURDATE()
              ORDER BY al2.log_id DESC
              LIMIT 1
          )
          WHERE ds.day_of_week = :day
            AND ds.status = "deployed"
            AND ds.term_id = :term_id
-         ORDER BY ds.start_time ASC, al.log_id DESC'
+         ORDER BY ds.start_time ASC'
     );
     $todayRowsStmt->execute([
         'day' => $currentDay,
@@ -123,13 +111,15 @@ foreach ($todayRows as $row) {
         'dot' => sams_admin_attendance_dot($status),
         'name' => sams_admin_attendance_display_name($row),
         'office' => $officeName,
+        'schedule_start' => (string) ($row['start_time'] ?? ''),
         'time_in' => $timeIn ? date('g:i A', strtotime($timeIn)) : '-',
         'time_out' => $timeOut ? date('g:i A', strtotime($timeOut)) : ($timeIn ? 'In Progress' : '-'),
-        'duration' => sams_admin_attendance_duration_label($timeIn, $timeOut),
+        'duration' => sams_attendance_duration_label($timeIn, $timeOut),
         'method' => !empty($timeIn) ? 'Live DB' : '-',
         'status' => match ($status) {
             'present', 'completed' => 'Present',
             'late' => 'Late',
+            'active' => 'Active',
             default => 'Absent',
         },
     ];
@@ -1000,7 +990,7 @@ $currentDateLabel = date('l, F j, Y');
                 </a>
                 <div class="topbar__user">
                     <div class="topbar__user-info">
-                        <span class="topbar__user-name">Zaira Joy S. Enayo</span>
+                        <span class="topbar__user-name"><?= htmlspecialchars($admin_name, ENT_QUOTES, 'UTF-8') ?></span>
                         <span class="topbar__user-role">SDAO Head</span>
                     </div>
                     <div class="topbar__avatar" aria-hidden="true">
@@ -1042,6 +1032,11 @@ $currentDateLabel = date('l, F j, Y');
                         <option value="week">This Week</option>
                         <option value="month">This Month</option>
                     </select>
+                    <select class="filter-select" aria-label="Filter by scheduled shift" id="scheduleShiftFilter">
+                        <option value="all">All schedules</option>
+                        <option value="morning">Morning</option>
+                        <option value="afternoon">Afternoon</option>
+                    </select>
                 </div>
                 <!-- Export -->
                 <button class="btn-export" type="button">
@@ -1077,9 +1072,9 @@ $currentDateLabel = date('l, F j, Y');
                                 <path d="M3 17l4-8 4 5 3-3 3 2" stroke="#155DFC" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
                         </div>
-                        <span class="stat-card__pct">+5%</span>
+                        <span class="stat-card__pct">Live</span>
                     </div>
-                    <div class="stat-card__value" id="metric-avg-hours">3.2h</div>
+                    <div class="stat-card__value" id="metric-avg-hours"><?= htmlspecialchars(sams_attendance_format_duration((int) $attendanceMonthSummary['average_seconds_per_day']), ENT_QUOTES, 'UTF-8') ?></div>
                     <div class="stat-card__label">Avg. Hours/Day</div>
                 </div>
                 <!-- Active Now -->
@@ -1106,9 +1101,9 @@ $currentDateLabel = date('l, F j, Y');
                                 <path d="M2 9h16" stroke="#F54900" stroke-width="1.2"/>
                             </svg>
                         </div>
-                        <span class="stat-card__pct">+12%</span>
+                        <span class="stat-card__pct">Live</span>
                     </div>
-                    <div class="stat-card__value" id="metric-month-hours">1,842h</div>
+                    <div class="stat-card__value" id="metric-month-hours"><?= htmlspecialchars(sams_attendance_format_duration((int) $attendanceMonthSummary['rendered_seconds']), ENT_QUOTES, 'UTF-8') ?></div>
                     <div class="stat-card__label">This Month</div>
                 </div>
             </div>
@@ -1143,7 +1138,7 @@ $currentDateLabel = date('l, F j, Y');
                         </thead>
                         <tbody id="attendanceTableBody">
                             <?php foreach ($attendance_rows as $row): ?>
-                            <tr>
+                            <tr data-schedule-start="<?= htmlspecialchars((string) ($row['schedule_start'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                                 <td>
                                     <div class="att-name">
                                         <span class="att-dot att-dot--<?= htmlspecialchars($row['dot']) ?>" aria-hidden="true"></span>
@@ -1159,8 +1154,8 @@ $currentDateLabel = date('l, F j, Y');
                                     <?php
                                     $st = strtolower($row['status']);
                                     $cls = 'att-status--scheduled';
-                                    if ($st === 'completed') $cls = 'att-status--completed';
-                                    elseif ($st === 'active') $cls = 'att-status--active';
+                                    if ($st === 'present' || $st === 'completed') $cls = 'att-status--completed';
+                                    elseif ($st === 'late' || $st === 'active') $cls = 'att-status--active';
                                     ?>
                                     <span class="att-status <?= $cls ?>"><?= htmlspecialchars($row['status']) ?></span>
                                 </td>
@@ -1253,18 +1248,55 @@ $currentDateLabel = date('l, F j, Y');
     /* ---- Live search filter ---- */
     var searchInput = document.getElementById('searchInput');
     var tableBody   = document.getElementById('attendanceTableBody');
+    var shiftFilter = document.getElementById('scheduleShiftFilter');
+
+    function schedulePeriod(startTime) {
+        var match = String(startTime || '').trim().match(/^(\d{1,2}):\d{2}(?::\d{2})?\s*(AM|PM)?$/i);
+        if (!match) return 'unknown';
+
+        var hour = parseInt(match[1], 10);
+        var meridiem = (match[2] || '').toUpperCase();
+        if (meridiem === 'PM' && hour < 12) hour += 12;
+        if (meridiem === 'AM' && hour === 12) hour = 0;
+        return hour < 12 ? 'morning' : 'afternoon';
+    }
+
+    function applyAttendanceFilters() {
+        if (!tableBody) return;
+
+        var query = searchInput ? searchInput.value.trim().toLowerCase() : '';
+        var selectedShift = shiftFilter ? shiftFilter.value : 'all';
+        var rows = Array.prototype.slice.call(tableBody.querySelectorAll('tr'));
+        var dataRows = rows.filter(function (row) { return !row.querySelector('td[colspan]'); });
+        var visibleCount = 0;
+
+        tableBody.querySelectorAll('[data-filter-empty]').forEach(function (row) { row.remove(); });
+        dataRows.forEach(function (row) {
+            var name = row.querySelector('.att-name');
+            var matchesSearch = !query || (name && name.textContent.toLowerCase().indexOf(query) !== -1);
+            var matchesShift = selectedShift === 'all' || schedulePeriod(row.getAttribute('data-schedule-start')) === selectedShift;
+            row.style.display = matchesSearch && matchesShift ? '' : 'none';
+            if (matchesSearch && matchesShift) visibleCount++;
+        });
+
+        if (dataRows.length > 0 && visibleCount === 0) {
+            var emptyRow = document.createElement('tr');
+            emptyRow.setAttribute('data-filter-empty', 'true');
+            var emptyCell = document.createElement('td');
+            emptyCell.colSpan = 7;
+            emptyCell.textContent = 'No schedules match this shift and search.';
+            emptyRow.appendChild(emptyCell);
+            tableBody.appendChild(emptyRow);
+        }
+    }
 
     if (searchInput && tableBody) {
         searchInput.addEventListener('input', function () {
-            var q = this.value.trim().toLowerCase();
-            var rows = tableBody.querySelectorAll('tr');
-            rows.forEach(function (row) {
-                var name = row.querySelector('.att-name');
-                var text = name ? name.textContent.toLowerCase() : '';
-                row.style.display = (!q || text.indexOf(q) !== -1) ? '' : 'none';
-            });
+            applyAttendanceFilters();
         });
     }
+    if (shiftFilter) shiftFilter.addEventListener('change', applyAttendanceFilters);
+    window.applyAttendanceFilters = applyAttendanceFilters;
 
 })();
 </script>
@@ -1278,6 +1310,8 @@ $currentDateLabel = date('l, F j, Y');
     var tableBody = document.getElementById('attendanceTableBody');
     var metricOnTime = document.getElementById('metric-on-time');
     var metricActive = document.getElementById('metric-active-now');
+    var metricAverageHours = document.getElementById('metric-avg-hours');
+    var metricMonthHours = document.getElementById('metric-month-hours');
     var officeBars = document.getElementById('officeBars');
     var securityVerified = document.getElementById('security-verified');
     var securityAccuracy = document.getElementById('security-accuracy');
@@ -1294,6 +1328,7 @@ $currentDateLabel = date('l, F j, Y');
         var office = r.office_name || '-';
         var timeIn = r.time_in || '-';
         var timeOut = r.time_out || (r.time_in ? 'In Progress' : '-');
+        var scheduleStart = r.start_time || r.schedule_start || '';
         var status = r.status || 'Scheduled';
         var dotCls = dotClassForStatus(status);
 
@@ -1301,12 +1336,12 @@ $currentDateLabel = date('l, F j, Y');
         if ((status || '').toLowerCase() === 'completed') statusCls = 'att-status--completed';
         else if ((status || '').toLowerCase() === 'active' || (status || '').toLowerCase() === 'late') statusCls = 'att-status--active';
 
-        var html = '<tr>' +
+        var html = '<tr data-schedule-start="' + escapeHtml(scheduleStart) + '">' +
             '<td><div class="att-name"><span class="att-dot ' + dotCls + '" aria-hidden="true"></span>' + escapeHtml(name) + '</div></td>' +
             '<td>' + escapeHtml(office) + '</td>' +
             '<td>' + escapeHtml(timeIn) + '</td>' +
             '<td>' + escapeHtml(timeOut) + '</td>' +
-            '<td><span class="att-duration">-</span></td>' +
+            '<td><span class="att-duration">' + escapeHtml(r.duration || '-') + '</span></td>' +
             '<td><span class="att-method">-</span></td>' +
             '<td><span class="att-status ' + statusCls + '">' + escapeHtml(status) + '</span></td>' +
             '</tr>';
@@ -1358,11 +1393,14 @@ $currentDateLabel = date('l, F j, Y');
 
                 if (metricActive) metricActive.textContent = String(active_now);
                 if (metricOnTime) metricOnTime.textContent = (completed_today + '/' + total_schedules);
+                if (metricAverageHours) metricAverageHours.textContent = metrics.average_hours_per_day || '0 min';
+                if (metricMonthHours) metricMonthHours.textContent = metrics.month_hours || '0 min';
 
                 // Table rows
                 if (tableBody && Array.isArray(data.today_rows)) {
                     var rowsHtml = data.today_rows.map(renderRow).join('');
                     tableBody.innerHTML = rowsHtml || '<tr><td colspan="7">No attendance records for today.</td></tr>';
+                    if (window.applyAttendanceFilters) window.applyAttendanceFilters();
                 }
 
                 // Offices
@@ -1400,6 +1438,7 @@ $currentDateLabel = date('l, F j, Y');
                     if (payload.today_rows && tableBody) {
                         var rowsHtml = (payload.today_rows || []).map(renderRow).join('');
                         tableBody.innerHTML = rowsHtml || '<tr><td colspan="7">No attendance records for today.</td></tr>';
+                        if (window.applyAttendanceFilters) window.applyAttendanceFilters();
                     }
                     if (payload.offices && Array.isArray(payload.offices)) updateOfficeBars(payload.offices);
                 } catch (err) {
@@ -1415,7 +1454,7 @@ $currentDateLabel = date('l, F j, Y');
 })();
 </script>
 
-<script src="../assets/js/admin-notifications.js"></script>
+<script src="../assets/js/admin-notifications.js?v=20260922"></script>
 
 </body>
 </html>

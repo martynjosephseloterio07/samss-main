@@ -195,6 +195,8 @@ if ($activeTerm && $officeName !== '') {
   <link rel="stylesheet" href="../assets/css/sams-shell.css" />
   <link rel="stylesheet" href="../assets/css/sams-theme-admin.css" />
   <link rel="stylesheet" href="../assets/css/supervisor-notifications.css" />
+  <link rel="stylesheet" href="../assets/css/sams-dark-mode.css?v=20260926" />
+  <link rel="stylesheet" href="../assets/css/notifications-shell.css?v=20260922" />
   <style>
     /* Reuse admin design system for consistent shell */
       *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -326,6 +328,7 @@ if ($activeTerm && $officeName !== '') {
           <svg class="topbar__icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" fill="#364153"/></svg>
           <span class="topbar__notif-dot" aria-label="New notifications" style="display:none"></span>
         </div>
+        <a href="profile.php" class="logout-btn"><?php echo htmlspecialchars((string) ($user['name'] ?? 'Supervisor'), ENT_QUOTES, 'UTF-8'); ?></a>
         <a href="logout.php" class="logout-btn">Logout</a>
       </div>
     </header>
@@ -438,6 +441,6 @@ if ($activeTerm && $officeName !== '') {
         </main>
     </div>
 </div>
-    <script src="../assets/js/admin-notifications.js"></script>
+    <script src="../assets/js/admin-notifications.js?v=20260922"></script><script src="../assets/js/sams-theme.js?v=20260926"></script>
 </body>
 </html>
